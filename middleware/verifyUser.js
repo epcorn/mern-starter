@@ -1,14 +1,18 @@
 import jwt from "jsonwebtoken";
 import { errorHandler } from "../utils/error.js";
+import User from "../models/userModel.js";
 
-function createToken(employee) {
-  let date = new Date().toISOString().split("T")[0];
+function createToken(user) {
   const token = jwt.sign(
     {
-      id: employee._id,
-      role: employee.role,
+      id: user._id,
+      rights: user.rights,
+      active: user.active,
     },
-    process.env.JWT_SECRET
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_LIFETIME,
+    }
   );
 
   return token;
@@ -20,32 +24,30 @@ const verifyToken = (req, res, next) => {
     return next(errorHandler(401, "No token"));
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, async (err, user) => {
     if (err) {
       return next(errorHandler(401, "unauthorized"));
     }
+    const dbUser = await User.findOne({ _id: user.id });
+
+    if (!dbUser) {
+      return next(errorHandler(404, "User not found"));
+    }
+
+    if (!dbUser.active) {
+      return next(errorHandler(401, "User is inactive"));
+    }
+
     req.user = user;
     next();
   });
 };
 
 const ifAdmin = (req, res, next) => {
-  if (req.user.role !== "admin") {
+  if (!req.user.rights.admin) {
     return next(errorHandler(403, "Forbidden"));
   }
   next();
 };
-const ifOprator = (req, res, next) => {
-  if (req.user.role !== "oprator") {
-    return next(errorHandler(403, "Not Oprator"));
-  }
-  next();
-};
-const ifHr = (req, res, next) => {
-  if (req.user.role !== "hr") {
-    return next(errorHandler(403, "Not Hr"));
-  }
-  next();
-};
 
-export { verifyToken, ifAdmin, ifOprator, ifHr, createToken };
+export { verifyToken, ifAdmin, createToken };
